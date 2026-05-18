@@ -85,6 +85,8 @@ inkos config set-global \
 
 `--lang en` sets English as the default writing language for all projects. Saved to `~/.inkos/.env`. New projects just work without extra config.
 
+For aggregator endpoints, Studio includes [kkaiapi](https://en.kkaiapi.com/) ([API docs](https://en.kkaiapi.com/docs) / [models and pricing](https://en.kkaiapi.com/models)) and OpenRouter as optional provider choices.
+
 **Option 2: Per-project `.env`**
 
 ```bash

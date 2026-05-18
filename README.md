@@ -95,6 +95,8 @@ inkos
 3. 选择可用模型，保存配置。
 4. 回到书籍页面开始写作。
 
+如果需要聚合 API，可以在 Studio 里选择 [kkaiapi](https://kkaiapi.com/)（[API 文档](https://kkaiapi.com/docs) / [模型与价格](https://kkaiapi.com/models)）或 OpenRouter。
+
 Studio 运行时只使用：
 
 ```text
