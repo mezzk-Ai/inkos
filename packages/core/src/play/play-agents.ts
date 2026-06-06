@@ -35,6 +35,18 @@ export interface PlaySceneRenderInput {
   readonly worldPremise?: string;
 }
 
+export interface PlaySceneReconcileInput {
+  readonly turn: number;
+  readonly input: string;
+  readonly action: PlayActionIntentInput;
+  readonly mutation: PlayMutationInput;
+  readonly sceneText: string;
+  readonly context: string;
+  readonly stateBrief: string;
+  readonly language?: "zh" | "en";
+  readonly worldPremise?: string;
+}
+
 const PlaySceneRenderSchema = z.object({
   sceneText: z.string().min(1),
   suggestedActions: z.array(z.string().min(1)).min(0).max(4).default([]),
@@ -213,6 +225,124 @@ export class PlaySceneRendererAgent extends BaseAgent {
       suggestedActions: [],
     };
   }
+}
+
+export class PlaySceneReconcilerAgent extends BaseAgent {
+  constructor(ctx: AgentContext) {
+    super(ctx);
+  }
+
+  get name(): string {
+    return "play-scene-reconciler";
+  }
+
+  async reconcile(input: PlaySceneReconcileInput): Promise<PlayMutationInput> {
+    const language = input.language ?? "zh";
+    const eventId = `evt-${input.turn}`;
+    const empty = emptyReconciliation(input.turn, PlayActionIntentSchema.parse(input.action).actionKind);
+    const messages: { role: "system" | "user"; content: string }[] = [
+      { role: "system", content: buildSceneReconcilerSystemPrompt(language) },
+      { role: "user", content: buildSceneReconcilerUserPrompt(input, language) },
+    ];
+    try {
+      const response = await chatWithRetry(() => this.chat(messages, { temperature: 0.1, maxTokens: 2048 }));
+      const parsed = PlayMutationSchema.parse(parseJson(response.content));
+      return {
+        ...parsed,
+        eventId: parsed.eventId || eventId,
+        turn: parsed.turn || input.turn,
+        actionKind: parsed.actionKind || PlayActionIntentSchema.parse(input.action).actionKind,
+      };
+    } catch {
+      return empty;
+    }
+  }
+}
+
+function emptyReconciliation(turn: number, actionKind: PlayActionIntent["actionKind"]): PlayMutationInput {
+  return {
+    eventId: `evt-${turn}`,
+    turn,
+    actionKind,
+    summary: "",
+    entities: { upsert: [] },
+    edges: { upsert: [], expire: [] },
+    stateSlots: { upsert: [] },
+    evidence: { transitions: [] },
+    blocked: false,
+    blockedReason: "",
+    notes: [],
+  };
+}
+
+function buildSceneReconcilerSystemPrompt(language: "zh" | "en"): string {
+  if (language === "en") {
+    return [
+      "You reconcile an interactive-fiction scene with the world graph.",
+      "Compare the rendered prose against the already applied changes and current state summary.",
+      "If the prose introduced a concrete named object, clue, evidence, location, organization, or person that is not represented in the applied changes/current state, output ONLY supplemental PlayMutation entries for those missing graph facts.",
+      "Do not rewrite prose. Do not invent facts that are not in the rendered scene. If nothing is missing, output an empty PlayMutation with empty arrays.",
+      "Use the same eventId/turn/actionKind. For items the player now holds, add a holding edge from actor_player with value.role=\"holding\".",
+      "Output strict JSON matching PlayMutation.",
+    ].join("\n");
+  }
+  return [
+    "你负责把互动小说正文和世界图谱对齐。",
+    "对照已经应用的本回合变化、当前状态摘要和最终正文。",
+    "如果正文里出现了具体且具名的新物件、线索、证据、地点、组织或人物，但它还没有体现在已应用变化/当前状态里，只输出这些缺失图谱事实的补充 PlayMutation。",
+    "不要改正文，不要发明正文没有的事实。没有缺失就输出空的 PlayMutation，各数组留空。",
+    "沿用同一个 eventId/turn/actionKind。玩家获得或拿在手里的实物，需要补一条 actor_player 指向该实体、value.role=\"holding\" 的 edge。",
+    "输出严格 JSON，必须符合 PlayMutation。",
+  ].join("\n");
+}
+
+function buildSceneReconcilerUserPrompt(input: PlaySceneReconcileInput, language: "zh" | "en"): string {
+  const actionKind = PlayActionIntentSchema.parse(input.action).actionKind;
+  const eventId = `evt-${input.turn}`;
+  if (language === "en") {
+    return [
+      `eventId: ${eventId}`,
+      `turn: ${input.turn}`,
+      `actionKind: ${actionKind}`,
+      "",
+      ...(input.worldPremise ? ["World setting:", input.worldPremise, ""] : []),
+      "Player input:",
+      input.input,
+      "",
+      "Current context before this turn:",
+      input.context,
+      "",
+      "Applied mutation:",
+      JSON.stringify(PlayMutationSchema.parse(input.mutation), null, 2),
+      "",
+      "Current state summary:",
+      input.stateBrief,
+      "",
+      "Rendered scene:",
+      input.sceneText,
+    ].join("\n");
+  }
+  return [
+    `eventId: ${eventId}`,
+    `turn: ${input.turn}`,
+    `actionKind: ${actionKind}`,
+    "",
+    ...(input.worldPremise ? ["世界设定：", input.worldPremise, ""] : []),
+    "玩家输入：",
+    input.input,
+    "",
+    "本回合前的当前上下文：",
+    input.context,
+    "",
+    "已应用 mutation：",
+    JSON.stringify(PlayMutationSchema.parse(input.mutation), null, 2),
+    "",
+    "当前状态摘要：",
+    input.stateBrief,
+    "",
+    "最终正文：",
+    input.sceneText,
+  ].join("\n");
 }
 
 function buildActionInterpreterSystemPrompt(language: "zh" | "en"): string {

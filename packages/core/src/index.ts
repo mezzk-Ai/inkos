@@ -73,9 +73,11 @@ export {
   PlayActionInterpreterAgent,
   PlayWorldMutatorAgent,
   PlaySceneRendererAgent,
+  PlaySceneReconcilerAgent,
   type PlayActionInterpreterInput,
   type PlayWorldMutatorInput,
   type PlaySceneRenderInput,
+  type PlaySceneReconcileInput,
   type PlaySceneRender,
 } from "./play/play-agents.js";
 export { PlayDB } from "./play/play-db.js";

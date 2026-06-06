@@ -10,6 +10,7 @@ import {
 } from "../models/play.js";
 import {
   PlayActionInterpreterAgent,
+  PlaySceneReconcilerAgent,
   PlaySceneRendererAgent,
   PlayWorldMutatorAgent,
   type PlaySceneRender,
@@ -49,6 +50,20 @@ export interface PlaySceneRendererLike {
   }) => Promise<PlaySceneRender>;
 }
 
+export interface PlaySceneReconcilerLike {
+  readonly reconcile: (input: {
+    readonly turn: number;
+    readonly input: string;
+    readonly action: PlayActionIntentInput;
+    readonly mutation: PlayMutationInput;
+    readonly sceneText: string;
+    readonly context: string;
+    readonly stateBrief: string;
+    readonly language?: "zh" | "en";
+    readonly worldPremise?: string;
+  }) => Promise<PlayMutationInput>;
+}
+
 export interface PlayRunnerOptions {
   readonly projectRoot: string;
   readonly worldId: string;
@@ -60,6 +75,7 @@ export interface PlayRunnerOptions {
     readonly actionInterpreter?: PlayActionInterpreterLike;
     readonly worldMutator?: PlayWorldMutatorLike;
     readonly sceneRenderer?: PlaySceneRendererLike;
+    readonly sceneReconciler?: PlaySceneReconcilerLike;
   };
 }
 
@@ -74,6 +90,7 @@ export class PlayRunner {
   private readonly actionInterpreter: PlayActionInterpreterLike;
   private readonly worldMutator: PlayWorldMutatorLike;
   private readonly sceneRenderer: PlaySceneRendererLike;
+  private readonly sceneReconciler: PlaySceneReconcilerLike | null;
 
   constructor(private readonly options: PlayRunnerOptions) {
     this.store = options.store ?? new PlayStore(options.projectRoot);
@@ -85,6 +102,7 @@ export class PlayRunner {
     this.actionInterpreter = options.agents?.actionInterpreter ?? new PlayActionInterpreterAgent(ctx!);
     this.worldMutator = options.agents?.worldMutator ?? new PlayWorldMutatorAgent(ctx!);
     this.sceneRenderer = options.agents?.sceneRenderer ?? new PlaySceneRendererAgent(ctx!);
+    this.sceneReconciler = options.agents?.sceneReconciler ?? (ctx ? new PlaySceneReconcilerAgent(ctx) : null);
   }
 
   async step(input: string): Promise<PlayStepResult> {
@@ -125,20 +143,35 @@ export class PlayRunner {
       worldPremise: world?.premise,
     });
 
-    // Commit everything together, only after the scene succeeded.
+    const finalMutation = this.sceneReconciler && !mutation.blocked
+      ? mergePlayMutations(mutation, PlayMutationSchema.parse(await this.sceneReconciler.reconcile({
+        turn,
+        input: rawInput,
+        action,
+        mutation,
+        sceneText: render.sceneText,
+        context,
+        stateBrief,
+        language,
+        worldPremise: world?.premise,
+      })))
+      : mutation;
+    const finalStateBrief = finalMutation === mutation ? stateBrief : renderStateBrief({ action, mutation: finalMutation });
+
+    // Commit everything together, only after the scene and graph reconciliation are in hand.
     const applied = applyPlayMutation({
       db: this.db,
-      mutation,
+      mutation: finalMutation,
       rawInput,
     });
     await this.store.appendEvent(this.options.worldId, this.options.runId, applied.event);
-    await this.store.writeProjection(this.options.worldId, this.options.runId, "projections/state.md", stateBrief);
+    await this.store.writeProjection(this.options.worldId, this.options.runId, "projections/state.md", finalStateBrief);
     await this.store.saveCurrentState(this.options.worldId, this.options.runId, {
       turn,
       lastEventId: applied.event.id,
       lastAction: action,
-      lastSummary: mutation.summary,
-      blocked: mutation.blocked,
+      lastSummary: finalMutation.summary,
+      blocked: finalMutation.blocked,
     });
     await this.store.writeProjection(this.options.worldId, this.options.runId, "projections/scene.md", `${render.sceneText}\n`);
     await this.store.appendTranscriptTurn(this.options.worldId, this.options.runId, {
@@ -155,7 +188,7 @@ export class PlayRunner {
     return {
       ...render,
       action,
-      mutation,
+      mutation: finalMutation,
     };
   }
 
@@ -194,6 +227,41 @@ function readGraphSnapshot(db: PlayReducerDB): PlayGraphSnapshot | null {
   } catch {
     return null;
   }
+}
+
+function mergePlayMutations(base: PlayMutation, supplement: PlayMutation): PlayMutation {
+  if (isEmptyMutationSupplement(supplement)) return base;
+  return PlayMutationSchema.parse({
+    ...base,
+    summary: supplement.summary?.trim()
+      ? `${base.summary || ""}${base.summary ? "；" : ""}${supplement.summary}`.trim()
+      : base.summary,
+    entities: {
+      upsert: [...base.entities.upsert, ...supplement.entities.upsert],
+    },
+    edges: {
+      upsert: [...base.edges.upsert, ...supplement.edges.upsert],
+      expire: [...base.edges.expire, ...supplement.edges.expire],
+    },
+    stateSlots: {
+      upsert: [...base.stateSlots.upsert, ...supplement.stateSlots.upsert],
+    },
+    evidence: {
+      transitions: [...base.evidence.transitions, ...supplement.evidence.transitions],
+    },
+    notes: [...base.notes, ...supplement.notes],
+  });
+}
+
+function isEmptyMutationSupplement(mutation: PlayMutation): boolean {
+  return mutation.entities.upsert.length === 0
+    && mutation.edges.upsert.length === 0
+    && mutation.edges.expire.length === 0
+    && mutation.stateSlots.upsert.length === 0
+    && mutation.evidence.transitions.length === 0
+    && mutation.notes.length === 0
+    && !mutation.summary.trim()
+    && !mutation.blocked;
 }
 
 function renderEntityRoster(entities: ReadonlyArray<PlayEntity>, language: "zh" | "en"): string {

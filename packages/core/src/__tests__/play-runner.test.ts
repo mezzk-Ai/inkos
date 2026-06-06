@@ -269,4 +269,77 @@ describe("PlayRunner", () => {
     expect(mutatorContext).toContain("actor_laochen [actor]: 老陈");
     expect(mutatorContext).toContain("org_tieshou_escort [organization]: 铁手镖队");
   });
+
+  it("reconciles concrete entities introduced by renderer prose back into the graph", async () => {
+    const db = new FakePlayDB();
+    const action: PlayActionIntentInput = {
+      actionKind: "look",
+      intent: "检查抽屉夹层",
+    };
+    const mutation: PlayMutationInput = {
+      eventId: "evt-1",
+      turn: 1,
+      actionKind: "look",
+      summary: "玩家检查抽屉夹层。",
+      entities: {
+        upsert: [{
+          id: "actor_player",
+          type: "actor",
+          label: "玩家",
+          summary: "当前玩家角色。",
+          status: "检查抽屉",
+          updatedEventId: "evt-1",
+        }],
+      },
+    };
+    const sceneText = "抽屉夹层里卡着一只黑色U盘，边角被胶带缠过。";
+    const reconcile = vi.fn(async () => ({
+      eventId: "evt-1",
+      turn: 1,
+      actionKind: "look",
+      summary: "补记场景正文中新出现的黑色U盘。",
+      entities: {
+        upsert: [{
+          id: "item_black_usb",
+          type: "item",
+          label: "黑色U盘",
+          summary: "抽屉夹层里发现的实物，可能存有关键资料。",
+          status: "已发现",
+          updatedEventId: "evt-1",
+        }],
+      },
+      edges: {
+        upsert: [{
+          id: "edge_actor_player_持有_item_black_usb",
+          fromId: "actor_player",
+          type: "持有",
+          toId: "item_black_usb",
+          value: { role: "holding" },
+          validFromEventId: "evt-1",
+          sourceEventId: "evt-1",
+        }],
+      },
+    }));
+    const runner = new PlayRunner({
+      projectRoot: root,
+      worldId: "renderer-noun",
+      runId: "run-1",
+      db,
+      agents: {
+        actionInterpreter: { interpret: vi.fn(async () => action) },
+        worldMutator: { proposeMutation: vi.fn(async () => mutation) },
+        sceneRenderer: { render: vi.fn(async () => ({ sceneText, suggestedActions: [] })) },
+        sceneReconciler: { reconcile },
+      },
+    });
+
+    await runner.step("我检查抽屉夹层");
+
+    expect(reconcile).toHaveBeenCalledWith(expect.objectContaining({ sceneText }));
+    expect(db.entities.get("item_black_usb")?.label).toBe("黑色U盘");
+    expect([...db.edges.values()].some((edge) => edge.toId === "item_black_usb" && edge.value?.role === "holding")).toBe(true);
+    await expect(readFile(join(root, "worlds", "renderer-noun", "runs", "run-1", "projections", "state.md"), "utf-8"))
+      .resolves
+      .toContain("黑色U盘");
+  });
 });

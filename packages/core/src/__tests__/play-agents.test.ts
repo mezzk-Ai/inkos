@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   PlayActionInterpreterAgent,
+  PlaySceneReconcilerAgent,
   PlaySceneRendererAgent,
   PlayWorldMutatorAgent,
   buildSceneRendererSystemPrompt,
 } from "../play/play-agents.js";
+import { PlayMutationSchema } from "../models/play.js";
 
 const ctx = {
   client: { provider: "openai" } as never,
@@ -171,6 +173,53 @@ describe("play agents", () => {
     // Degraded to a placeholder scene — a thrown error here would break (and half-commit) the turn.
     expect(result.sceneText.length).toBeGreaterThan(0);
     expect(result.suggestedActions).toEqual([]);
+  });
+
+  it("reconciler extracts supplemental graph facts from rendered prose", async () => {
+    const agent = new PlaySceneReconcilerAgent(ctx);
+    vi.spyOn(agent as unknown as { chat: PlaySceneReconcilerAgent["chat"] }, "chat").mockResolvedValue({
+      content: JSON.stringify({
+        eventId: "evt-2",
+        turn: 2,
+        actionKind: "look",
+        summary: "补记黑色U盘。",
+        entities: { upsert: [{ id: "item_black_usb", type: "item", label: "黑色U盘", status: "已发现" }] },
+      }),
+    } as never);
+
+    const mutation = PlayMutationSchema.parse(await agent.reconcile({
+      turn: 2,
+      input: "我检查抽屉",
+      action: { actionKind: "look", intent: "检查抽屉" },
+      mutation: { eventId: "evt-2", turn: 2, actionKind: "look", summary: "检查抽屉。" },
+      sceneText: "抽屉夹层里卡着一只黑色U盘。",
+      context: "当前实体名册：actor_player [actor]: 玩家",
+      stateBrief: "# Play State\n- summary: 检查抽屉。\n",
+      language: "zh",
+    }));
+
+    expect(mutation.entities.upsert[0]?.label).toBe("黑色U盘");
+  });
+
+  it("reconciler fails open to an empty supplement on malformed output", async () => {
+    const agent = new PlaySceneReconcilerAgent(ctx);
+    vi.spyOn(agent as unknown as { chat: PlaySceneReconcilerAgent["chat"] }, "chat").mockResolvedValue({
+      content: "没有需要补充的内容。",
+    } as never);
+
+    const mutation = PlayMutationSchema.parse(await agent.reconcile({
+      turn: 2,
+      input: "我检查抽屉",
+      action: { actionKind: "look", intent: "检查抽屉" },
+      mutation: { eventId: "evt-2", turn: 2, actionKind: "look", summary: "检查抽屉。" },
+      sceneText: "抽屉里只有灰。",
+      context: "当前实体名册：actor_player [actor]: 玩家",
+      stateBrief: "# Play State\n- summary: 检查抽屉。\n",
+      language: "zh",
+    }));
+
+    expect(mutation.entities.upsert).toEqual([]);
+    expect(mutation.edges.upsert).toEqual([]);
   });
 });
 
