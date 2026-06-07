@@ -5,6 +5,8 @@ import {
   HOLDING_TYPES, HOLDING_GLYPH, SLOT_GLYPH, EVIDENCE_LADDER,
   type HudDetail, type HudRow, type HoldingRow, type HoldingRelation, type HoldingLifecycle,
 } from "./play-hud/types";
+import { HoldingSlot } from "./play-hud/HoldingSlot";
+import { HoldingInspect } from "./play-hud/HoldingInspect";
 
 // The HUD is genre-neutral: it renders whatever the world graph contains,
 // grouped into "what I face" (world/here-now) and "what I hold" (backpack).
@@ -321,6 +323,7 @@ export function PlayHud(props: {
   const { sessionId, isStreaming, isZh } = props;
   const base = `/play/runs/${encodeURIComponent(sessionId)}/main`;
   const [open, setOpen] = useState(true);
+  const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null);
   const [run, setRun] = useState<PlayRunResponse | null>(null);
   const [hasUnseen, setHasUnseen] = useState(false);
   const [settings, setSettings] = useState<PlayImageSettings>({ actors: false, moments: false, inventory: false });
@@ -402,6 +405,9 @@ export function PlayHud(props: {
   }, [base, load]);
 
   const view = useMemo(() => buildView(run), [run]);
+  // The selected holding is looked up fresh from the current view, so if it
+  // disappears on the next turn the panel falls back to the list automatically.
+  const selectedHolding = view?.holdings.find((h) => h.id === selectedHoldingId) ?? null;
 
   // Auto-illustrate new actors / inventory / current moment when the toggle is on and an image
   // API is configured. Decoupled + deduped (inFlight): never blocks a turn,
@@ -441,7 +447,7 @@ export function PlayHud(props: {
             {view?.mode ? ` · ${view.mode === "guided" ? (isZh ? "互动模式" : "Guided") : (isZh ? "开放模式" : "Open")}` : ""}
           </div>
         </div>
-        <button type="button" onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground" title={isZh ? "收起" : "Collapse"}>
+        <button type="button" onClick={() => { setOpen(false); setSelectedHoldingId(null); }} className="text-muted-foreground hover:text-foreground" title={isZh ? "收起" : "Collapse"}>
           <X size={15} />
         </button>
       </header>
@@ -453,6 +459,13 @@ export function PlayHud(props: {
               ? "这个世界还没有状态。在左侧输入第一个动作，系统会生成开场并把人物、线索、状态显示在这里。"
               : "No world state yet. Take your first action on the left and characters, clues, and state will appear here."}
           </p>
+        ) : selectedHolding ? (
+          <HoldingInspect
+            row={selectedHolding}
+            isZh={isZh}
+            generating={generating.has(selectedHolding.id)}
+            onBack={() => setSelectedHoldingId(null)}
+          />
         ) : (
           <>
             {run?.sceneImageUrl && (
@@ -487,11 +500,12 @@ export function PlayHud(props: {
               emptyText={isZh ? "还没有获得物品、证据或线索" : "No items, evidence, or clues yet"}
             >
               {view.holdings.map((row) => (
-                <Row
+                <HoldingSlot
                   key={row.id}
-                  row={{ id: row.id, glyph: row.glyph, label: row.label, imageUrl: row.imageUrl, value: row.preview, note: row.statusPill ?? null, details: [] }}
+                  row={row}
                   isZh={isZh}
                   generating={generating.has(row.id)}
+                  onOpen={() => setSelectedHoldingId(row.id)}
                 />
               ))}
             </Zone>
