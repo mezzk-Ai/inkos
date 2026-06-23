@@ -17,6 +17,7 @@ import { StoryNodeSchema } from "../interactive-film/graph-schema.js";
 import { writeCharacterFacts } from "../interactive-film/memory-link.js";
 import { MemoryDB } from "../state/memory-db.js";
 import { join } from "node:path";
+import { generateNodeImage, defaultNodeImageDeps, type NodeImageDeps } from "../interactive-film/node-image.js";
 
 // ---------------------------------------------------------------------------
 // Local helper — textResult is not exported from agent-tools.ts
@@ -310,6 +311,32 @@ export function createRemoveNodeTool(
 }
 
 // ---------------------------------------------------------------------------
+// generate_node_image
+// ---------------------------------------------------------------------------
+
+const GenerateNodeImageParams = Type.Object({
+  nodeId: Type.String({ description: "the node to generate a shot image for (uses its imageSlot.prompt or sceneDesc)" }),
+});
+
+export function createGenerateNodeImageTool(projectRoot: string, projectId: string, deps?: NodeImageDeps): AgentTool<typeof GenerateNodeImageParams> {
+  return {
+    name: "generate_node_image",
+    description: "interactive-film authoring: generate a shot image for a node (from its imageSlot.prompt or sceneDesc) and attach it. Applies immediately.",
+    label: "Generate Node Image",
+    parameters: GenerateNodeImageParams,
+    async execute(_id, params: Static<typeof GenerateNodeImageParams>) {
+      const graph = await loadStoryGraph(projectRoot, projectId);
+      const node = graph?.nodes.find((n) => n.id === params.nodeId);
+      if (!node) throw new Error(`node ${params.nodeId} not found`);
+      const imageDeps = deps ?? (await defaultNodeImageDeps(projectRoot));
+      const { assetRef, delta } = await generateNodeImage({ projectRoot, projectId, node, deps: imageDeps });
+      const { rev } = await applyGraphDelta({ projectRoot, projectId, delta });
+      return textResult(`Generated image for node ${params.nodeId} (rev ${rev}).`, { kind: "graph_updated", rev, assetRef });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tool set selection + factory
 // ---------------------------------------------------------------------------
 
@@ -325,7 +352,7 @@ export function buildFilmAuthoringToolNames(confirmedIntent: string | undefined)
   if (confirmedIntent === "draft_structure") return ["draft_structure"];
   if (confirmedIntent === "connect_choice") return ["connect_choice"];
   if (confirmedIntent === "remove_node") return ["remove_node"];
-  return ["set_world_anchor", "upsert_characters", "add_variable", "define_ending", "fill_node", "revise_node", "propose_action"];
+  return ["set_world_anchor", "upsert_characters", "add_variable", "define_ending", "fill_node", "revise_node", "generate_node_image", "propose_action"];
 }
 
 /**
@@ -349,6 +376,7 @@ export function createFilmAuthoringTools(params: {
     define_ending: () => createDefineEndingTool(projectRoot, projectId),
     fill_node: () => createFillNodeTool(projectRoot, projectId, llm),
     revise_node: () => createReviseNodeTool(projectRoot, projectId, llm),
+    generate_node_image: () => createGenerateNodeImageTool(projectRoot, projectId),
     draft_structure: () => createDraftStructureTool(projectRoot, projectId, llm),
     connect_choice: () => createConnectChoiceTool(projectRoot, projectId),
     remove_node: () => createRemoveNodeTool(projectRoot, projectId),

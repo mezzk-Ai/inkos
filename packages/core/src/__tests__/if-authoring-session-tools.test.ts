@@ -6,6 +6,7 @@ describe("interactive-film-authoring tool set", () => {
     const names = buildFilmAuthoringToolNames(undefined);
     expect(names).toContain("set_world_anchor");
     expect(names).toContain("fill_node");
+    expect(names).toContain("generate_node_image");
     expect(names).toContain("propose_action");
     expect(names).not.toContain("draft_structure");
   });

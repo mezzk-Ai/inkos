@@ -27,6 +27,7 @@ export {
   createDefineEndingTool,
   createFillNodeTool,
   createReviseNodeTool,
+  createGenerateNodeImageTool,
   createDraftStructureTool,
   createConnectChoiceTool,
   createRemoveNodeTool,
