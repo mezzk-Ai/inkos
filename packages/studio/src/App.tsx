@@ -21,6 +21,7 @@ import { DoctorView } from "./pages/DoctorView";
 import { StoryPlayer } from "./pages/StoryPlayer";
 import { StoryGraphTree } from "./pages/StoryGraphTree";
 const FlowView = lazy(() => import("./pages/FlowView"));
+const FilmWizard = lazy(() => import("./pages/FilmWizard"));
 import { LanguageSelector } from "./pages/LanguageSelector";
 import { BookSidebar, BookSidebarToggle } from "./components/chat/BookSidebar";
 import { useSSE } from "./hooks/use-sse";
@@ -100,6 +101,7 @@ export function App() {
     toFilm: (projectId: string) => setRoute({ page: "film", projectId }),
     toFlow: (projectId: string) => setRoute({ page: "flow", projectId }),
     toFilmAuthor: (projectId: string) => setRoute({ page: "film-author", projectId }),
+    toFilmStudio: (projectId: string) => setRoute({ page: "film-studio", projectId }),
   };
 
   const activeBookId = deriveActiveBookId(route);
@@ -341,6 +343,11 @@ export function App() {
                 sse={sse}
               />
             </div>
+          )}
+          {route.page === "film-studio" && (
+            <Suspense fallback={<div className="p-6 text-sm">加载创作向导…</div>}>
+              <FilmWizard projectId={route.projectId} nav={nav} theme={theme} t={t} sse={sse} />
+            </Suspense>
           )}
           {route.page === "flow" && (
             <Suspense fallback={<div className="p-6 text-sm">加载流程图…</div>}>

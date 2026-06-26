@@ -62,6 +62,7 @@ interface Nav {
   toImport: (tab?: "chapters" | "canon" | "fanfic" | "spinoff" | "imitation") => void;
   toStyle: () => void;
   toFilm: (projectId: string) => void;
+  toFilmStudio: (projectId: string) => void;
 }
 
 export interface ChatPageProps {
@@ -690,6 +691,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                               onProposedAction={handleProposedAction}
                               onRejectProposedAction={handleRejectProposedAction}
                               onOpenFilm={nav.toFilm}
+                              onOpenFilmStudio={nav.toFilmStudio}
                             />
                           );
                         }

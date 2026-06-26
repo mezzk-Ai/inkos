@@ -219,7 +219,7 @@ export function getGeneratedArtifactDetails(exec: ToolExecution): GeneratedArtif
   };
 }
 
-function ScriptStoryboardResultPreview({ exec, onOpenFilm }: { exec: ToolExecution; onOpenFilm?: (projectId: string) => void }) {
+function ScriptStoryboardResultPreview({ exec, onOpenFilm, onOpenFilmStudio }: { exec: ToolExecution; onOpenFilm?: (projectId: string) => void; onOpenFilmStudio?: (projectId: string) => void }) {
   const openProjectArtifact = useChatStore((s) => s.openProjectArtifact);
   if (!["script_create", "storyboard_create", "interactive_film_create"].includes(exec.tool) || exec.status !== "completed") return null;
   const details = getGeneratedArtifactDetails(exec);
@@ -246,14 +246,14 @@ function ScriptStoryboardResultPreview({ exec, onOpenFilm }: { exec: ToolExecuti
         <div className="text-[16px] leading-6 font-semibold text-primary">
           {details.kind === "script_created" ? "剧本已生成" : details.kind === "storyboard_created" ? "分镜已生成" : "互动影游已生成"}
         </div>
-        {details.kind === "interactive_film_created" && details.projectId && onOpenFilm && (
+        {details.kind === "interactive_film_created" && details.projectId && onOpenFilmStudio && (
           <button
             type="button"
-            data-testid="open-story-tree"
-            onClick={() => onOpenFilm(details.projectId!)}
+            data-testid="open-film-studio"
+            onClick={() => onOpenFilmStudio(details.projectId!)}
             className="shrink-0 rounded-lg bg-primary px-3 py-1 text-[13px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
           >
-            打开剧情树 →
+            打开创作向导 →
           </button>
         )}
       </div>
@@ -631,11 +631,13 @@ function PipelineExecution({
   onProposedAction,
   onRejectProposedAction,
   onOpenFilm,
+  onOpenFilmStudio,
 }: {
   exec: ToolExecution;
   onProposedAction?: (details: ProposedActionDetails) => void;
   onRejectProposedAction?: (details: ProposedActionDetails) => void;
   onOpenFilm?: (projectId: string) => void;
+  onOpenFilmStudio?: (projectId: string) => void;
 }) {
   const isActive = exec.status === "running" || exec.status === "processing";
   const [open, setOpen] = useState(isActive);
@@ -676,7 +678,7 @@ function PipelineExecution({
         onRejectProposedAction={onRejectProposedAction}
       />
       <ShortFictionResultPreview exec={exec} />
-      <ScriptStoryboardResultPreview exec={exec} onOpenFilm={onOpenFilm} />
+      <ScriptStoryboardResultPreview exec={exec} onOpenFilm={onOpenFilm} onOpenFilmStudio={onOpenFilmStudio} />
       <PlayResultPreview exec={exec} />
       <PlayEditPreview exec={exec} />
       {typeof exec.result === "string" && exec.result.trim() && (
@@ -779,6 +781,7 @@ export interface ToolExecutionStepsProps {
   onProposedAction?: (details: ProposedActionDetails) => void;
   onRejectProposedAction?: (details: ProposedActionDetails) => void;
   onOpenFilm?: (projectId: string) => void;
+  onOpenFilmStudio?: (projectId: string) => void;
 }
 
 /**
@@ -812,7 +815,7 @@ export function groupToolExecutionsChronologically(executions: ToolExecution[]):
   return groups;
 }
 
-export const ToolExecutionSteps = memo(function ToolExecutionSteps({ executions, onProposedAction, onRejectProposedAction, onOpenFilm }: ToolExecutionStepsProps) {
+export const ToolExecutionSteps = memo(function ToolExecutionSteps({ executions, onProposedAction, onRejectProposedAction, onOpenFilm, onOpenFilmStudio }: ToolExecutionStepsProps) {
   const groups = useMemo(() => groupToolExecutionsChronologically(executions), [executions]);
 
   return (
@@ -826,6 +829,7 @@ export const ToolExecutionSteps = memo(function ToolExecutionSteps({ executions,
                 onProposedAction={onProposedAction}
                 onRejectProposedAction={onRejectProposedAction}
                 onOpenFilm={onOpenFilm}
+                onOpenFilmStudio={onOpenFilmStudio}
               />
             )
           : <UtilityToolsGroup key={`utils-${i}`} execs={g.execs} />
